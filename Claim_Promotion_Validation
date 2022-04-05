@@ -1,0 +1,119 @@
+use hfs_promotion_validation;
+
+-- Whole process
+-- Step 1: ETL Process, Prepare data like Joining data, filter out double or more layers promotion
+-- Step 2: Promotion Validation and provide reasons for rejection ex. Barcode mismatch promotion, wrong channel claims, and not reach minimum requirement
+-- Step 3: Join Data for addition product and sales resposibility
+-- Step 4: Export data or connect to Power BI
+
+CREATE TEMPORARY TABLE Right_Join_Transaction_Promo
+
+SELECT *,
+	ROUND((claim_transaction.Discount/claim_transaction.Sellout),2) AS Discount_Percent
+FROM claim_promo_master
+	RIGHT JOIN claim_transaction
+		ON claim_promo_master.InitiativeID = claim_transaction.Promotion_ID
+		AND claim_promo_master.Barcode_Promo = claim_transaction.EAN_Local
+        AND claim_promo_master.InvtID_Promo = claim_transactidataon.FPC_Local;
+
+CREATE TEMPORARY TABLE check_double_promotion
+SELECT *,
+	CASE WHEN Unit > Item_Claim_Maximum Then "YES" Else "NO" END AS check_double
+FROM Right_Join_Transaction_Promo
+HAVING check_double = "NO";
+
+CREATE TEMPORARY TABLE Lookup_Duplicate
+
+SELECT Transaction_ID AS Transaction_ID_Lookup,
+	COUNT(Transaction_ID)
+FROM check_double_promotion
+GROUP BY Transaction_ID
+Having COUNT(Transaction_ID) = 1;
+
+
+CREATE TEMPORARY TABLE Filter_Duplicate_out2
+
+SELECT *
+
+FROM check_double_promotion
+	INNER JOIN Lookup_Duplicate
+    ON check_double_promotion.Transaction_ID =  Lookup_Duplicate.Transaction_ID_Lookup;
+    
+
+CREATE TEMPORARY TABLE check_condition_barcode
+SELECT *,
+   CASE WHEN InitiativeID IS NOT NULL Then "YES" Else "NO" END AS check_Barcode_or_InvID
+FROM Filter_Duplicate_out2;
+
+
+
+CREATE TEMPORARY TABLE check_condition_claim
+SELECT *,
+   CASE WHEN check_Barcode_or_InvID = "YES" AND ROUND(Discount_Percent,2) <= ROUND(Promo_discount_percent,2)  Then "YES" Else "NO" END AS check_discount,
+   CASE WHEN check_Barcode_or_InvID = "YES" AND Local_Segment IN (HFSS,HFSM,HFSL,HFSXL) Then "YES" Else "NO" END AS check_local_segment,
+   CASE WHEN check_Barcode_or_InvID = "YES" AND Unit >= Item_Claim_Minimum  Then "YES" ElSE "NO" END AS check_min_rqm,
+   CASE WHEN round(Sellout * Promo_discount_percent,2) IS NOT NULL THEN round(Sellout * Promo_discount_percent,2) ELSE 0 END  AS max_can_claim
+
+ FROM check_condition_barcode;
+ 
+ 
+
+
+
+CREATE TEMPORARY TABLE check_condition_claim2
+ SELECT *,
+	CASE WHEN check_Barcode_or_InvID = "YES" AND check_discount = "YES" AND check_local_segment = "YES" AND check_min_rqm = "YES" Then Discount Else 0 END AS Discount_can_claim,
+    CASE WHEN check_Barcode_or_InvID = "NO" Then Discount ELSE 0 END AS Barcode_or_Inv_Reason,
+    CASE WHEN check_Barcode_or_InvID = "YES" AND check_min_rqm = "NO" Then Discount ELSE 0 END AS MinRQM_Reason
+FROM check_condition_claim;
+
+
+CREATE TEMPORARY TABLE check_condition_claim3
+SELECT *,
+CASE WHEN check_Barcode_or_InvID = "YES" AND Discount_can_claim <= max_can_claim Then Discount_can_claim Else max_can_claim - Discount_can_claim END AS Overmax_reason
+FROM check_condition_claim2;
+
+SELECT * FROM check_condition_claim3;
+
+CREATE TEMPORARY TABLE Filter_Output1
+
+SELECT check_condition_claim3.Transaction_ID,
+		check_condition_claim3.Promotion_ID,
+        check_condition_claim3.Date,
+        check_condition_claim3.Local_Segment,
+        check_condition_claim3.Invoice_ID,
+        check_condition_claim3.Distributor_Branch_Local,
+        check_condition_claim3.EAN_Local,
+        check_condition_claim3.FPC_Local,
+        check_condition_claim3.Store_Code,
+        store_master.Seller_Supervisor_ID,
+        store_master.Seller_ID,
+        check_condition_claim3.Sellout,
+        check_condition_claim3.Discount,
+        check_condition_claim3.Unit,
+        check_condition_claim3.Discount_Percent,
+        check_condition_claim3.Discount_can_claim,
+        check_condition_claim3.Barcode_or_Inv_Reason,
+        check_condition_claim3.MinRQM_Reason,
+        check_condition_claim3.Overmax_reason
+
+FROM check_condition_claim3
+		INNER JOIN store_master
+        ON store_master.Distributor_Branch_Local = check_condition_claim3.Distributor_Branch_Local
+        AND store_master.Store_Code = check_condition_claim3.Store_Code
+        ;
+        
+CREATE TEMPORARY TABLE Filter_Output2
+SELECT *
+        
+FROM Filter_Output1
+		INNER JOIN product_master
+        ON product_master.EAN_Code = Filter_Output1.EAN_Local
+		AND product_master.FPC = Filter_Output1.FPC_Local
+;
+
+-- CREATE TEMPORARY TABLE Filter_Output3
+SELECT *
+FROM Filter_Output2
+INNER JOIN distributor_master
+        ON distributor_master.Distributor_Branch = Filter_Output2.Distributor_Branch_Local
