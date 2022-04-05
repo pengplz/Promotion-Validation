@@ -6,6 +6,9 @@ use hfs_promotion_validation;
 -- Step 3: Join Data for addition product and sales resposibility
 -- Step 4: Export data or connect to Power BI
 
+
+**Step 1
+
 CREATE TEMPORARY TABLE Right_Join_Transaction_Promo
 
 SELECT *,
@@ -46,6 +49,7 @@ SELECT *,
 FROM Filter_Duplicate_out2;
 
 
+**Step 2
 
 CREATE TEMPORARY TABLE check_condition_claim
 SELECT *,
@@ -75,6 +79,7 @@ FROM check_condition_claim2;
 
 SELECT * FROM check_condition_claim3;
 
+
 CREATE TEMPORARY TABLE Filter_Output1
 
 SELECT check_condition_claim3.Transaction_ID,
@@ -102,7 +107,9 @@ FROM check_condition_claim3
         ON store_master.Distributor_Branch_Local = check_condition_claim3.Distributor_Branch_Local
         AND store_master.Store_Code = check_condition_claim3.Store_Code
         ;
-        
+ 
+ ** Step 3
+ 
 CREATE TEMPORARY TABLE Filter_Output2
 SELECT *
         
@@ -117,3 +124,5 @@ SELECT *
 FROM Filter_Output2
 INNER JOIN distributor_master
         ON distributor_master.Distributor_Branch = Filter_Output2.Distributor_Branch_Local
+
+** Step 4 Please view on report
